@@ -9,6 +9,7 @@ import datetime
 import requests
 import argparse
 import itertools
+from collections import defaultdict
 
 from gen_queries import getPriorVersion, versionToESRs, nonRollupList, rollupListMainAndESR, rollupListMainOnly, rollupListMain, rollupListESROnly, rollupListESR
 from yml_utils import *
@@ -44,121 +45,39 @@ if __name__ == "__main__":
 
     # -------------------------------------------------------------
     # Figure out the rollup situation
-    # This is easy if there is only one ESR version and hard if there are two.
-    # With one ESR, bugs will either be non-rollup, rollup-to-main, rollup-to-esr, or rollup-to-main-and-esr
-    # With two ESRs, bugs could be non-rollup, rollup-to-main, rollup-to-esr1, rollup-to-esr2, rollup-to-main-and-esr1, rollup-to-main-and-esr2, rollup-to-esr1-and-esr2, or rollup-to-main-and-esr1-and-esr2
 
     # Non-rollup bugs
     nonRollUpBugs = doBugRequest(nonRollupList(targetVersion, mainVersion, args.esr).replace("buglist.cgi", "rest/bug") + "&api_key=" + APIKEY)
     # Rollup bugs
-    rollUpBugsMain = doBugRequest(rollupListMain(mainVersion) + "&api_key=" + APIKEY)
-    rollUpBugsESR1 = doBugRequest(rollupListESR(allEsrVersions[0]) + "&api_key=" + APIKEY)
-    if len(allEsrVersions) > 1:
-        rollUpBugsESR2 = doBugRequest(rollupListESR(allEsrVersions[1]) + "&api_key=" + APIKEY)
-    else:
-        rollUpBugsESR2 = []
-    allBugsById = {b['id']: b for b in itertools.chain(nonRollUpBugs, rollUpBugsMain, rollUpBugsESR1, rollUpBugsESR2)}
+    rollup_bugs = []
+    rollup_bugs.extend(doBugRequest(rollupListMain(mainVersion) + "&api_key=" + APIKEY))
+    for esrVersion in allEsrVersions:
+        rollup_bugs.extend(doBugRequest(rollupListESR(esrVersion) + "&api_key=" + APIKEY))
+    allBugsById = {b["id"]: b for b in itertools.chain(nonRollUpBugs, rollup_bugs)}
 
-    non_rollup = set(b['id'] for b in nonRollUpBugs)
-    rollup_to_main = set(b['id'] for b in rollUpBugsMain)
-    rollup_to_esr1 = set(b['id'] for b in rollUpBugsESR1)
-    rollup_to_esr2 = set(b['id'] for b in rollUpBugsESR2)
-    rollup_to_main_and_esr1 = rollup_to_main.intersection(rollup_to_esr1)
-    rollup_to_main_and_esr2 = rollup_to_main.intersection(rollup_to_esr2)
-    rollup_to_esr1_and_esr2 = rollup_to_esr1.intersection(rollup_to_esr2)
-    rollup_to_main_and_esr1_and_esr2 = rollup_to_main.intersection(rollup_to_esr1).intersection(rollup_to_esr2)
+    non_rollup = set(b["id"] for b in nonRollUpBugs)
+
+    grouped_rollup_bugs = defaultdict(set)
+    for b in rollup_bugs:
+        versions = [matchgroup[2] for matchgroup in re.findall(r"\[adv-((main|esr)([\d\.]*))\+r\]", b["whiteboard"], re.IGNORECASE)]
+        grouped_rollup_bugs[tuple(sorted(versions))].add(b["id"])
 
     rollupCalls = []
-
-    # rollup-to-main-and-esr1-and-esr2
-    if rollup_to_main_and_esr1_and_esr2:
-        eprint("Bugs that are in all three %s, %s, and %s: %s" % (mainVersion, allEsrVersions[0], allEsrVersions[1], rollup_to_main_and_esr1_and_esr2))
-        rollupCalls.append(
-            (
-                sorted(rollup_to_main_and_esr1_and_esr2),
-                f"Firefox {mainVersion}, Thunderbird {mainVersion}, Firefox ESR {allEsrVersions[0]}, Firefox ESR {allEsrVersions[1]}, Thunderbird {allEsrVersions[0]}, and Thunderbird {allEsrVersions[1]}",
-                f"Firefox {getPriorVersion(mainVersion)}, Thunderbird {getPriorVersion(mainVersion)}, Firefox ESR {getPriorVersion(allEsrVersions[0])}, Firefox ESR {getPriorVersion(allEsrVersions[1])}, Thunderbird {getPriorVersion(allEsrVersions[0])}, and Thunderbird {getPriorVersion(allEsrVersions[1])}",
-                1,
-            )
-        )
-
-    # rollup-to-main-and-esr1
-    if (rollup_to_main_and_esr1 - rollup_to_esr2):
-        eprint("Bugs that are only in %s and %s: %s" % (mainVersion, allEsrVersions[0], rollup_to_main_and_esr1 - rollup_to_esr2))
-        if not args.esr or args.esr == 1:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_main_and_esr1 - rollup_to_esr2),
-                    f"Firefox {mainVersion}, Thunderbird {mainVersion}, Firefox ESR {allEsrVersions[0]}, and Thunderbird {allEsrVersions[0]}",
-                    f"Firefox {getPriorVersion(mainVersion)}, Thunderbird {getPriorVersion(mainVersion)}, Firefox ESR {getPriorVersion(allEsrVersions[0])}, and Thunderbird {getPriorVersion(allEsrVersions[0])}",
-                    2,
-                )
-            )
-
-    # rollup-to-main-and-esr2
-    if (rollup_to_main_and_esr2 - rollup_to_esr1):
-        eprint("Bugs that are only in %s and %s: %s" % (mainVersion, allEsrVersions[1], rollup_to_main_and_esr2 - rollup_to_esr1))
-        if not args.esr or args.esr == 2:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_main_and_esr2 - rollup_to_esr1),
-                    f"Firefox {mainVersion}, Thunderbird {mainVersion}, Firefox ESR {allEsrVersions[1]}, and Thunderbird {allEsrVersions[1]}",
-                    f"Firefox {getPriorVersion(mainVersion)}, Thunderbird {getPriorVersion(mainVersion)}, Firefox ESR {getPriorVersion(allEsrVersions[1])}, and Thunderbird {getPriorVersion(allEsrVersions[1])}",
-                    3,
-                )
-            )
-
-    # rollup-to-main
-    if (rollup_to_main - rollup_to_esr1 - rollup_to_esr2):
-        eprint("Bugs that are only in %s and not in either ESR: %s" % (mainVersion, rollup_to_main - rollup_to_esr1 - rollup_to_esr2))
-        if not args.esr:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_main - rollup_to_esr1 - rollup_to_esr2),
-                    f"Firefox {mainVersion} and Thunderbird {mainVersion}",
-                    f"Firefox {getPriorVersion(mainVersion)} and Thunderbird {getPriorVersion(mainVersion)}",
-                    4,
-                )
-            )
-
-    # rollup-to-esr1-and-esr2
-    if (rollup_to_esr1_and_esr2 - rollup_to_main):
-        eprint("Bugs that are in only the ESRs %s and %s: %s" % (allEsrVersions[0], allEsrVersions[1], rollup_to_esr1_and_esr2 - rollup_to_main))
-        if args.esr:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_esr1_and_esr2 - rollup_to_main),
-                    f"Firefox ESR {allEsrVersions[0]}, Firefox ESR {allEsrVersions[1]}, Thunderbird {allEsrVersions[0]}, and Thunderbird {allEsrVersions[1]}",
-                    f"Firefox ESR {getPriorVersion(allEsrVersions[0])}, Firefox ESR {getPriorVersion(allEsrVersions[1])}, Thunderbird {getPriorVersion(allEsrVersions[0])}, and Thunderbird {getPriorVersion(allEsrVersions[1])}",
-                    5,
-                )
-            )
-
-    # rollup-to-esr1
-    if (rollup_to_esr1 - rollup_to_esr2 - rollup_to_main):
-        eprint("Bugs that are only in %s and not in %s or %s: %s" % (allEsrVersions[0], allEsrVersions[1] if len(allEsrVersions) > 1 else "<>", mainVersion, rollup_to_esr1 - rollup_to_esr2 - rollup_to_main))
-        if args.esr == 1:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_esr1 - rollup_to_esr2 - rollup_to_main),
-                    f"Firefox ESR {allEsrVersions[0]} and Thunderbird {allEsrVersions[0]}",
-                    f"Firefox ESR {getPriorVersion(allEsrVersions[0])}, and Thunderbird {getPriorVersion(allEsrVersions[0])}",
-                    6,
-                )
-            )
-
-    # rollup-to-esr2
-    if (rollup_to_esr2 - rollup_to_esr1 - rollup_to_main):
-        eprint("Bugs that are only in %s and not in %s or %s: %s" % (allEsrVersions[1], allEsrVersions[0], mainVersion, rollup_to_esr2 - rollup_to_esr1 - rollup_to_main))
-        if args.esr == 2:
-            rollupCalls.append(
-                (
-                    sorted(rollup_to_esr2 - rollup_to_esr1 - rollup_to_main),
-                    f"Firefox ESR {allEsrVersions[1]} and Thunderbird {allEsrVersions[1]}",
-                    f"Firefox ESR {getPriorVersion(allEsrVersions[1])}, and Thunderbird {getPriorVersion(allEsrVersions[1])}",
-                    7,
-                )
-            )
+    for i, (vs, bs) in enumerate(grouped_rollup_bugs.items()):
+        eprint(f"Bugs that are in {', '.join(vs)}: {bs}")
+        sorted_bs = sorted(bs)
+        version_text = []
+        previous_version_text = []
+        for v in vs:
+            for product in ["Firefox", "Thunderbird"]:
+                if v != mainVersion:
+                    product += " ESR"
+                version_text.append(product + " " + v)
+                previous_version_text.append(product + " " + getPriorVersion(v))
+        version_text_s = pretty_text_list(version_text)
+        previous_version_text_s = pretty_text_list(previous_version_text)
+        if targetVersion in vs:
+            rollupCalls.append((sorted_bs, version_text_s, previous_version_text_s, i))
 
     advisories = []
     references = []

@@ -55,10 +55,10 @@ def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
 def cleanUpRealName(name):
-    name = re.sub(" \[:[^\]]+\]", "", name)
-    name = re.sub(" \(:[^\)]+\)", "", name)
-    name = re.sub(" \(needinfo[^\)]+\)", "", name)
-    name = re.sub(" \(ni [^\)]+\)", "", name)
+    name = re.sub(r" \[:[^\]]+\]", "", name)
+    name = re.sub(r" \(:[^\)]+\)", "", name)
+    name = re.sub(r" \(needinfo[^\)]+\)", "", name)
+    name = re.sub(r" \(ni [^\)]+\)", "", name)
     return name
 
 def getSeverity(bugJSON):
@@ -155,3 +155,9 @@ def sanityCheckBugs(bugs, require_cves=False):
             retvalue = False
 
     return retvalue
+
+def pretty_text_list(words):
+    if len(words) == 1:
+        return words[0]
+    return " and ".join([", ".join(words[:-1]), words[-1]])
+
