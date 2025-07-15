@@ -47,12 +47,12 @@ if __name__ == "__main__":
     # Figure out the rollup situation
 
     # Non-rollup bugs
-    nonRollUpBugs = doBugRequest(nonRollupList(targetVersion, mainVersion, args.esr).replace("buglist.cgi", "rest/bug") + "&api_key=" + APIKEY)
+    nonRollUpBugs = doBugRequest(nonRollupList(targetVersion, mainVersion, args.esr).replace("buglist.cgi", "rest/bug"), api_key = APIKEY)
     # Rollup bugs
     rollup_bugs = []
-    rollup_bugs.extend(doBugRequest(rollupListMain(mainVersion) + "&api_key=" + APIKEY))
+    rollup_bugs.extend(doBugRequest(rollupListMain(mainVersion), api_key = APIKEY))
     for esrVersion in allEsrVersions:
-        rollup_bugs.extend(doBugRequest(rollupListESR(esrVersion) + "&api_key=" + APIKEY))
+        rollup_bugs.extend(doBugRequest(rollupListESR(esrVersion), api_key = APIKEY))
     allBugsById = {b["id"]: b for b in itertools.chain(nonRollUpBugs, rollup_bugs)}
 
     non_rollup = set(b["id"] for b in nonRollUpBugs)

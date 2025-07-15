@@ -91,8 +91,9 @@ def sortAdvisories(advisories):
 def bugLinkToRest(link):
     return link.replace("/buglist.cgi?", "/rest/bug?")
 
-def doBugRequest(link):
-    r = requests.get(bugLinkToRest(link))
+def doBugRequest(link, api_key):
+    headers = { "X-Bugzilla-Api-Key": api_key }
+    r = requests.get(bugLinkToRest(link), headers=headers)
     bugs = r.json()
     return bugs['bugs']
 
