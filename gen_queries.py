@@ -33,7 +33,7 @@ def versionToESRs(version):
         
         # three ESRs!!!!
         if version in range(140, 143):
-            ret.append(str(subsetOfESRs[-3]) + "." + str(version - subsetOfESRs[-3]))
+            ret.insert(0, str(subsetOfESRs[-3]) + "." + str(version - subsetOfESRs[-3]))
         return ret
     else:
         pointRelease = str(subsetOfESRs[-1]) + "." + str(version - subsetOfESRs[-1])
@@ -51,7 +51,7 @@ def sanityCheck():
         (132, ["115.17", "128.4"]),
         (136, ["115.21", "128.8"]),
         (137, ["115.22", "128.9"]),
-        (142, ["128.14", "140.2", "115.27"])
+        (142, [ "115.27", "128.14", "140.2"])
     ]
     for e in expected:
         if versionToESRs(e[0]) != e[1]:
