@@ -72,6 +72,10 @@ if __name__ == "__main__":
             for product in ["Firefox", "Thunderbird"]:
                 if v != mainVersion:
                     product += " ESR"
+                # Special case, Thunderbird doesn't have an ESR 115 anymore
+                # since 133 the last version was 115.18
+                if product == "Thunderbird ESR" and v.startswith("115") and int(mainVersion) > 133:
+                    continue
                 version_text.append(product + " " + v)
                 previous_version_text.append(product + " " + getPriorVersion(v))
         version_text_s = pretty_text_list(version_text)
