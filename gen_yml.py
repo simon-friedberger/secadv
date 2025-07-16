@@ -173,8 +173,9 @@ if __name__ == "__main__":
                 rollupMaxSeverity = getMaxSeverity(rollupMaxSeverity, getSeverity(b))
             except:
                 pass
+        rollupReporters = sorted(rollupReporters)
         if addFuzzing:
-            rollupReporters.add("the Mozilla Fuzzing Team")
+            rollupReporters.append("the Mozilla Fuzzing Team")
 
         description = f"Memory safety {bug_str} present in {priorVersionTitle}. {some_str.capitalize()} {bug_str} showed evidence of memory corruption and we presume that with enough effort {some_str} could have been exploited to run arbitrary code."
         print(f"  MFSA-RESERVE-{thisyear}-{rollupType}:")
