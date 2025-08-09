@@ -91,7 +91,7 @@ if __name__ == "__main__":
         
         attachment_text = getAdvisoryAttachment(b['id'])
         
-        if Advisory.is_reference(attachment_text):
+        if attachment_text is not None and Advisory.is_reference(attachment_text):
             references.append((Advisory.is_reference(attachment_text), b['id'], getSeverity(b)))
         else:
             advisories.append(Advisory(b, attachment_text))
@@ -107,13 +107,10 @@ if __name__ == "__main__":
         if len(rollupBugs) == 1:
             b = rollupBugs[0]
             if args.exclude is None or str(b) not in args.exclude:
-                try:
+                if getAdvisoryAttachment(b) is None and args.allow_single:
+                    filteredRollupCalls.append((rollupBugs, versions, priorVersions, rollupType))
+                else:
                     advisories.append(Advisory(allBugsById[b], getAdvisoryAttachment(b)))
-                except:
-                    if not args.allow_single:
-                        raise Exception(f"Could not find an advisory for {b} which is the only bug in rollup for {versions}.")
-                    else:
-                        filteredRollupCalls.append((rollupBugs, versions, priorVersions, rollupType))
         else:
             filteredRollupCalls.append((rollupBugs, versions, priorVersions, rollupType))
 
@@ -137,8 +134,9 @@ if __name__ == "__main__":
         print("    title:", a.getTitle())
         print("    impact:", a.severity)
         print("    reporter:", a.reporter)
-        print("    description: |")
-        print("      " + a.description)
+        if a.description != "":
+            print("    description: |")
+            print("      " + a.description)
         print("    bugs:")
         for each_id in a.ids:
             print("      - url:", each_id)
@@ -164,10 +162,10 @@ if __name__ == "__main__":
         for b_id in buglist:
             b = allBugsById[b_id]
             rollupIDs.append(b_id)
-            name = cleanUpRealName(b['creator_detail']['real_name'])
+            name = cleanUpRealName(b)
             if name in ["Christian Holler", "Jason Kratzer", "Tyson Smith", "Jesse Schwartzentruber"]:
                 addFuzzing = True
-            elif name not in ["Treeherder Bug Filer"]:
+            elif name not in ["Treeherder Bug Filer", "BugBot"]:
                 rollupReporters.add(name)
             try:
                 rollupMaxSeverity = getMaxSeverity(rollupMaxSeverity, getSeverity(b))

@@ -20,12 +20,18 @@ class Advisory:
         self.product = bugJSON['product']
         self.ids = [ bugJSON['id'] ]
         self.severity = getSeverity(bugJSON)
-        advisory_lines = advisoryText.decode("utf-8").split("\n")
-
         self.cve = bugJSON['alias'] if bugJSON['alias'] else ""
-        self.title = advisory_lines[0].strip()
-        self.reporter = advisory_lines[1].strip() #cleanUpRealName(bugJSON['creator_details']['real_name'])
-        self.description = "\n".join(advisory_lines[2:]).strip()
+        if advisoryText is not None:
+            advisory_lines = advisoryText.decode("utf-8").split("\n")
+            self.title = advisory_lines[0].strip()
+            if self.title == "-":
+                self.title = makeTitle(bugJSON)
+            self.reporter = advisory_lines[1].strip()
+            self.description = "\n".join(advisory_lines[2:]).strip()
+        else:
+            self.title = makeTitle(bugJSON)
+            self.reporter = cleanUpRealName(bugJSON)
+            self.description = ""
     def pprint(self):
         print(self.id)
         print("\t", self.severity)
@@ -54,12 +60,72 @@ class Advisory:
 def eprint(*args, **kwargs):
     print(*args, file=sys.stderr, **kwargs)
 
-def cleanUpRealName(name):
-    name = re.sub(r" \[:[^\]]+\]", "", name)
-    name = re.sub(r" \(:[^\)]+\)", "", name)
-    name = re.sub(r" \(needinfo[^\)]+\)", "", name)
-    name = re.sub(r" \(ni [^\)]+\)", "", name)
+def cleanUpRealName(bugJSON):
+    bzName = bugJSON['creator_detail']['real_name']
+    name = re.sub(r" \([^\)]+\)", "", bzName) # remove anything in parentheses
+    name = re.sub(r" \[[^\]]+\]", "", name) # remove anything in brackets
+    name = re.sub(" --.*", "", name) # remove anything after  --
+    lookup = {
+        'az': 'Ashley Zebrowski',
+    }
+    if name in lookup:
+        name = lookup[name]
+    if name != bzName:
+        eprint(f"Using name '{name}' for Bug {bugJSON['id']} derived from {bzName}")
     return name
+
+def makeTitle(bugJSON):
+    return f"{getCsectype(bugJSON)} in the {getComponent(bugJSON)} component of {getProduct(bugJSON)}"
+
+def getCsectype(bugJSON):
+    causes = []
+    effects = []
+    for keyword in bugJSON['keywords']:
+        if not keyword.startswith("csectype-"):
+            continue
+        match keyword:
+            case "csectype-sandbox-escape":
+                effects.append("sandbox escape")
+            case "csectype-spoof":
+                effects.append("spoofing issue")
+            case "csectype-dos":
+                effects.append("denial-of-service")
+            case "csectype-oom":
+                causes.append("out-of-memory")
+            case "csectype-uninitialized":
+                causes.append("uninitialized memory")
+            case "csectype-wildptr":
+                causes.append("invalid pointer")
+            case "csectype-sop":
+                effects.append("same-origin policy bypass")
+            case _:
+                raise Exception(f"Bug {bugJSON['id']} has unknown csectype- keyword: {keyword}")
+
+    whatandwhy = effects + causes
+    if len(whatandwhy) == 0:
+        raise Exception(f"Bug {bugJSON['id']} has no csectype- keywords: {bugJSON['keywords']}")
+    if len(whatandwhy) > 2:
+        raise Exception(f"Bug {bugJSON['id']} has too many csectype- keywords: {bugJSON['keywords']}")
+
+    return " due to ".join(whatandwhy)
+
+def getComponent(bugJSON):
+    bzProd = bugJSON['product']
+    if bzProd in ["Core"]:
+        return bzProd + " - " + bugJSON["component"]
+    return bugJSON["component"]
+
+def getProduct(bugJSON):
+    bzProd = bugJSON['product']
+    if bzProd in ["Firefox for Android"]:
+        return "Firefox for Android"
+    if bzProd in ["Focus"]:
+        return "Firefox Focus for Android"
+    if bzProd in ["GeckoView"]:
+        return "Firefox and Firefox Focus for Android"
+    if bzProd in ["Firefox", "Core", "DevTools", "WebExtensions"]:
+        return "Firefox"
+    raise NotImplementedError(f"Please define product string for {bugJSON['product']} for bug {bugJSON['id']}")
 
 def getSeverity(bugJSON):
     severity = None
@@ -71,7 +137,7 @@ def getSeverity(bugJSON):
             else:
                 severity = thisSev
     if severity is None:
-        raise Exception(str(bugJSON['id']) + " is missing a sec keyword")
+        raise Exception(f"Bug {bugJSON['id']} is missing a sec keyword")
     return severity
 
 def sortAdvisories(advisories):
@@ -94,8 +160,19 @@ def bugLinkToRest(link):
 def doBugRequest(link, api_key):
     headers = { "X-Bugzilla-Api-Key": api_key }
     r = requests.get(bugLinkToRest(link), headers=headers)
-    bugs = r.json()
-    return bugs['bugs']
+    if r.status_code != 200:
+        eprint(f"Bugzilla API returned status {r.status_code}")
+    try:
+        bugs = r.json()
+        res = bugs['bugs']
+    except Exception as e:
+        eprint(f"Failed to parse Bugzilla output")
+        eprint(f"JSON:")
+        eprint(bugs)
+        eprint(f"Exception")
+        eprint(e)
+        raise e
+    return res
 
 def getAdvisoryAttachment(bugid):
     link = "https://bugzilla.mozilla.org/rest/bug/" + str(bugid) + "/attachment?api_key=" + APIKEY
@@ -110,8 +187,6 @@ def getAdvisoryAttachment(bugid):
             if advisory is not None:
                 raise Exception(str(bugid) + " has two advisory.txt attachments")
             advisory = base64.b64decode(a['data'])
-    if advisory is None:
-        raise Exception(str(bugid) + " is missing an advisory.txt attachment")
     return advisory
 
 def getMaxSeverity(current, this):
@@ -144,15 +219,6 @@ def sanityCheckBugs(bugs, require_cves=False):
         # Check if the bug is fixed or not
         if b['status'] != "RESOLVED" and b['status'] != "VERIFIED":
             eprint(bugid, "is not marked as fixed, but is marked for this version")
-            retvalue = False
-
-        # Check if the bug has an advisory
-        try:
-            getAdvisoryAttachment(bugid)
-        except Exception as e:
-            eprint(bugid, "might be missing an advisory attachment. Please create an attachment named advisory.txt as described here: https://wiki.mozilla.org/Security/Firefox/Security_Bug_Life_Cycle/Security_Advisories#Write_the_advisories")
-            eprint("Exception:")
-            eprint(e)
             retvalue = False
 
     return retvalue
