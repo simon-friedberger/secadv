@@ -17,6 +17,7 @@ except:
 class Advisory:
     def __init__(self, bugJSON, advisoryText):
         self.id = bugJSON['id']
+        self.product = bugJSON['product']
         self.ids = [ bugJSON['id'] ]
         self.severity = getSeverity(bugJSON)
         advisory_lines = advisoryText.decode("utf-8").split("\n")
@@ -36,6 +37,9 @@ class Advisory:
         if self.cve:
             return self.cve
         return f"MFSA-RESERVE-{datetime.date.today().year}-{self.id}"
+    def getProduct(self):
+        if self.product:
+            return self.product
     def getTitle(self):
         if ":" in self.title:
             return "'" + self.title + "'"
