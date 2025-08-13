@@ -172,14 +172,18 @@ if __name__ == "__main__":
             except:
                 pass
         rollupReporters = sorted(rollupReporters)
+        reporter = ", ".join(rollupReporters)
         if addFuzzing:
-            rollupReporters.append("the Mozilla Fuzzing Team")
+            if reporter != "":
+                reporter += " and the Mozilla Fuzzing Team"
+            else:
+                reporter = "The Mozilla Fuzzing Team"
 
         description = f"Memory safety {bug_str} present in {priorVersionTitle}. {some_str.capitalize()} {bug_str} showed evidence of memory corruption and we presume that with enough effort {some_str} could have been exploited to run arbitrary code."
         print(f"  MFSA-RESERVE-{thisyear}-{rollupType}:")
         print("    title: Memory safety", bug_str, "fixed in", versionTitle)
         print("    impact:", rollupMaxSeverity)
-        print("    reporter:", ", ".join(rollupReporters))
+        print("    reporter:", reporter)
         print("    description: |")
         print("     ", description)
         print("    bugs:")
